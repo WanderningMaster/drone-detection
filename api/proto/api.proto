@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package api;
+option go_package="./apipb";
+
+
+service HealthService {
+  rpc healthcheck(Payload) returns (Empty);
+}
+
+// service AudioAnalysis {
+//   // client‐streaming: we open one RPC and pump in Buf messages
+//   rpc Analyze(stream AudioBuf) returns (Empty);
+// }
+//
+message Empty {
+}
+message Payload {
+  string sensor_id = 1;
+}
+//
+// message AudioBuf {
+//   string sensor_id = 1;     // e.g. "sensor-42"
+//   uint32 seq_offset = 2;    // sequence number or cumulative frame offset
+//   bytes  pcm        = 3;    // raw little-endian int16 PCM
+// }

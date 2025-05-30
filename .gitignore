@@ -1,0 +1,5 @@
+mqtt/
+bin/
+sensor/config
+gen/
+__pycache__
