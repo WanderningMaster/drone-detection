@@ -1,0 +1,21 @@
+syntax = "proto3";
+package gateway;
+
+option go_package = "your_module_path/gatewaypb;gatewaypb";
+
+// GatewayService allows external callers (e.g. go‐audio‐server) to push sensor status updates.
+service GatewayService {
+  // UpdateStatus is called when a sensor’s status changes (online/offline).
+  rpc UpdateStatus (StatusRequest) returns (StatusResponse);
+}
+
+// StatusRequest carries a sensor_id and a status string ("online" or "offline").
+message StatusRequest {
+  int32 sensor_id = 1;
+  string status  = 2;
+}
+
+// StatusResponse simply acknowledges success or failure.
+message StatusResponse {
+  bool success = 1;
+}

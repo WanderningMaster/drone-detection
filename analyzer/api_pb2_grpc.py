@@ -5,7 +5,7 @@ import grpc
 import api_pb2 as api__pb2
 
 
-class HealthServiceStub(object):
+class AnalyzerServiceStub(object):
     """Missing associated documentation comment in .proto file."""
 
     def __init__(self, channel):
@@ -14,42 +14,42 @@ class HealthServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.healthcheck = channel.unary_unary(
-                '/api.HealthService/healthcheck',
-                request_serializer=api__pb2.Payload.SerializeToString,
+        self.Analyze = channel.stream_unary(
+                '/api.AnalyzerService/Analyze',
+                request_serializer=api__pb2.AudioBuf.SerializeToString,
                 response_deserializer=api__pb2.Empty.FromString,
                 )
 
 
-class HealthServiceServicer(object):
+class AnalyzerServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
-    def healthcheck(self, request, context):
+    def Analyze(self, request_iterator, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
 
-def add_HealthServiceServicer_to_server(servicer, server):
+def add_AnalyzerServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'healthcheck': grpc.unary_unary_rpc_method_handler(
-                    servicer.healthcheck,
-                    request_deserializer=api__pb2.Payload.FromString,
+            'Analyze': grpc.stream_unary_rpc_method_handler(
+                    servicer.Analyze,
+                    request_deserializer=api__pb2.AudioBuf.FromString,
                     response_serializer=api__pb2.Empty.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'api.HealthService', rpc_method_handlers)
+            'api.AnalyzerService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
 
 
  # This class is part of an EXPERIMENTAL API.
-class HealthService(object):
+class AnalyzerService(object):
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
-    def healthcheck(request,
+    def Analyze(request_iterator,
             target,
             options=(),
             channel_credentials=None,
@@ -59,8 +59,69 @@ class HealthService(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/api.HealthService/healthcheck',
-            api__pb2.Payload.SerializeToString,
+        return grpc.experimental.stream_unary(request_iterator, target, '/api.AnalyzerService/Analyze',
+            api__pb2.AudioBuf.SerializeToString,
             api__pb2.Empty.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+
+class GatewayServiceStub(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.UpdateStatus = channel.unary_unary(
+                '/api.GatewayService/UpdateStatus',
+                request_serializer=api__pb2.StatusRequest.SerializeToString,
+                response_deserializer=api__pb2.StatusResponse.FromString,
+                )
+
+
+class GatewayServiceServicer(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def UpdateStatus(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+
+def add_GatewayServiceServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+            'UpdateStatus': grpc.unary_unary_rpc_method_handler(
+                    servicer.UpdateStatus,
+                    request_deserializer=api__pb2.StatusRequest.FromString,
+                    response_serializer=api__pb2.StatusResponse.SerializeToString,
+            ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+            'api.GatewayService', rpc_method_handlers)
+    server.add_generic_rpc_handlers((generic_handler,))
+
+
+ # This class is part of an EXPERIMENTAL API.
+class GatewayService(object):
+    """Missing associated documentation comment in .proto file."""
+
+    @staticmethod
+    def UpdateStatus(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/api.GatewayService/UpdateStatus',
+            api__pb2.StatusRequest.SerializeToString,
+            api__pb2.StatusResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

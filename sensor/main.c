@@ -3,21 +3,21 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
 #include <alsa/asoundlib.h>
 #include <mosquitto.h>
+#include <signal.h>
 
 #define MQTT_BROKER   "0.0.0.0"
 #define MQTT_PORT     1883
 #define MQTT_TOPIC    "sensors/audio/%d"
-
-
+#define MQTT_TOPIC_STATUS    "sensors/status/%d"
 
 #define SAMPLE_RATE     16000
 #define CHANNELS        1
 #define FRAMES_PER_BUF  1024
-#define DURATION_SEC    10
-#define TOTAL_FRAMES    (SAMPLE_RATE * DURATION_SEC)
+
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,15 +25,37 @@
 #include <arpa/inet.h>
 #include <alsa/asoundlib.h>
 
+struct mosquitto *mosq;
+snd_pcm_t *pcm;
+int sensor_id;
+
+void publish_status(char* status) {
+	char topic[50];
+	snprintf(topic, sizeof(topic), MQTT_TOPIC_STATUS, sensor_id);
+	mosquitto_publish(mosq, NULL, topic,
+			strlen(status), status, 1, false);
+}
+
+void sig_handler(int signo) {
+	if (signo == SIGINT) {
+		publish_status("offline");
+
+		mosquitto_loop_stop(mosq, 1);
+		mosquitto_destroy(mosq);
+		mosquitto_lib_cleanup();
+		snd_pcm_close(pcm);
+
+		exit(0);
+	}
+}
+
 int main(int argc, char *argv[]) {
 	char *p;
-	int sensor_id = (int)strtol(argv[1], &p, 10);
+	sensor_id = (int)strtol(argv[1], &p, 10);
 	printf("Initialized Sensor %d\n", sensor_id);
 
 	int err;
-	snd_pcm_t *pcm;
 	snd_pcm_hw_params_t *hw;
-	struct mosquitto *mosq;
 	uint32_t seq = 0;
 	int16_t buffer[FRAMES_PER_BUF];
 
@@ -64,14 +86,18 @@ int main(int argc, char *argv[]) {
 		fprintf(stderr, "Mosquitto connect error\n");
 		return 1;
 	}
-	printf("Connected to tcp://%s:%d\n\n", MQTT_BROKER, MQTT_PORT);
+	printf("Connected to tcp://%s:%d\n", MQTT_BROKER, MQTT_PORT);
 	mosquitto_loop_start(mosq);
+	publish_status("online");
 
 	char topic[50];
 	snprintf(topic, sizeof(topic), MQTT_TOPIC, sensor_id);
 	printf("Topic: %s\n", topic);
 
 
+	if (signal(SIGINT, sig_handler) == SIG_ERR) {
+		 printf("\ncan't catch SIGINT\n");
+	}
 	while (1) {
 		err = snd_pcm_readi(pcm, buffer, FRAMES_PER_BUF);
 		if (err < 0) {
@@ -98,9 +124,5 @@ int main(int argc, char *argv[]) {
 		usleep((FRAMES_PER_BUF * 1000000) / SAMPLE_RATE);
 	}
 
-	mosquitto_loop_stop(mosq, 1);
-	mosquitto_destroy(mosq);
-	mosquitto_lib_cleanup();
-	snd_pcm_close(pcm);
 	return 0;
 }

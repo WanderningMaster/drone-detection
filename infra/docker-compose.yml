@@ -1,0 +1,46 @@
+services:
+  mqtt5:
+    image: eclipse-mosquitto
+    container_name: mqtt5
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./config:/mosquitto/config:rw
+      - ./data:/mosquitto/data:rw
+      - ./log:/mosquitto/log:rw
+    restart: unless-stopped
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672" 
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - rabbitmq_net
+  ongo:
+    image: mongo:5.0
+    container_name: mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+volumes:
+  config:
+  data:
+  log:
+  rabbitmq_data:
+  mongo_data:
+
+networks:
+  rabbitmq_net:
+    driver: bridge
+  default:
+    name: mqtt5-network

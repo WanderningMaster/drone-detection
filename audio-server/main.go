@@ -1,10 +1,14 @@
 package main
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"log"
-	"os"
+	"main/apipb"
+	"main/service"
+	"strconv"
+	"strings"
 	"sync"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -16,15 +20,18 @@ type packet struct {
 }
 
 const (
-	broker            = "tcp://0.0.0.0:1883"
-	topicWildcard     = "sensors/audio/%d"
-	pcmFile           = "output/sensor-%d.pcm"
-	logBytesThreshold = 100 * 1014
+	broker              = "tcp://0.0.0.0:1883"
+	topicWildcard       = "sensors/audio/%d"
+	statusTopicWildcard = "sensors/status/#"
+	pcmFile             = "output/sensor-%d.pcm"
+	logBytesThreshold   = 100 * 1014
+	SAMPLE_RATE         = 16000
 )
 
 var streams map[int]chan packet
+var mu sync.Mutex
 
-func subscribeCb(sensorId int, mu *sync.Mutex) func(mqtt.Client, mqtt.Message) {
+func subscribeCb(sensorId int) func(mqtt.Client, mqtt.Message) {
 	return func(_ mqtt.Client, msg mqtt.Message) {
 		payload := msg.Payload()
 		if len(payload) < 4 {
@@ -35,20 +42,7 @@ func subscribeCb(sensorId int, mu *sync.Mutex) func(mqtt.Client, mqtt.Message) {
 		data := make([]byte, len(payload)-4)
 		copy(data, payload[4:])
 
-		mu.Lock()
-		ch, exists := streams[sensorId]
-		if !exists {
-			log.Printf("Connected sendor %d", sensorId)
-			f, err := os.Create(fmt.Sprintf(pcmFile, sensorId))
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			ch = make(chan packet, 10)
-			streams[sensorId] = ch
-			go handleStream(sensorId, ch, f)
-		}
-		mu.Unlock()
+		ch, _ := streams[sensorId]
 
 		select {
 		case ch <- packet{seq, data}:
@@ -59,8 +53,16 @@ func subscribeCb(sensorId int, mu *sync.Mutex) func(mqtt.Client, mqtt.Message) {
 }
 
 func main() {
+	ctx := context.Background()
+	analyzer := service.NewAnalyzerService("0.0.0.0:50051")
+	gateway := service.NewGatewayService("0.0.0.0:50052")
+	streams = make(map[int]chan packet)
+
 	opts := mqtt.NewClientOptions().AddBroker(broker)
 	opts.SetClientID("go-audio-server")
+	opts.OnConnect = func(c mqtt.Client) {
+		log.Printf("[MQTT] Connected (or reconnected) to %s", broker)
+	}
 	client := mqtt.NewClient(opts)
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
 		log.Fatal(token.Error())
@@ -68,29 +70,55 @@ func main() {
 	defer client.Disconnect(250)
 	fmt.Printf("Connected to %s\n", broker)
 
-	streams = make(map[int]chan packet)
-	var mu sync.Mutex
+	client.Subscribe(statusTopicWildcard, 1, func(c mqtt.Client, m mqtt.Message) {
+		parts := strings.Split(m.Topic(), "/")
+		sensorId := parts[len(parts)-1]
+		id, _ := strconv.Atoi(sensorId)
 
-	sensorIds := []int{1, 2}
-	for _, id := range sensorIds {
 		topic := fmt.Sprintf(topicWildcard, id)
-		client.Subscribe(topic, 1, subscribeCb(id, &mu))
-		fmt.Printf("Subscribed to topic: %s\n", topic)
 
-	}
+		if string(m.Payload()) == "online" {
+			mu.Lock()
+			ch, exists := streams[id]
+			if !exists {
+				log.Printf("Sensor connected: sensor-%d", id)
+				ch = make(chan packet, 10)
+				streams[id] = ch
+				go handleStream(ctx, analyzer, id, ch)
+			}
+			mu.Unlock()
+
+			client.Subscribe(topic, 1, subscribeCb(id))
+		} else {
+			mu.Lock()
+			delete(streams, id)
+			log.Printf("Sensor disconnected: sensor-%d", id)
+			mu.Unlock()
+
+			client.Unsubscribe(topic)
+		}
+		gateway.UpdateStatus(ctx, &apipb.StatusRequest{
+			SensorId: int32(id),
+			Status:   string(m.Payload()),
+		})
+	})
 
 	select {}
 }
 
-func handleStream(sensorId int, ch chan packet, f *os.File) {
-	defer f.Close()
+func handleStream(ctx context.Context, analyzer apipb.AnalyzerServiceClient, sensorId int, ch chan packet) {
 	defer log.Printf("[sensor-%d] stream handler exiting\n", sensorId)
 
 	var (
 		expectedSeq     uint32
 		totalBytesWrite int64
-		nextLogPoint    = int64(logBytesThreshold)
+		buffer          []byte
+		batchSize       = 10 * SAMPLE_RATE * 2 // 10s * sample rate * 1 channel * 16bit pcm
 	)
+	stream, err := analyzer.Analyze(ctx)
+	if err != nil {
+		log.Fatalf("analyze rpc error: %v", err)
+	}
 
 	for pkt := range ch {
 		if pkt.seq != expectedSeq {
@@ -98,17 +126,21 @@ func handleStream(sensorId int, ch chan packet, f *os.File) {
 			expectedSeq = pkt.seq
 		}
 
-		if _, err := f.Write(pkt.data); err != nil {
-			log.Printf("write error: %v", err)
-		}
-
 		n := int64(len(pkt.data))
 		totalBytesWrite += n
+		buffer = append(buffer, pkt.data...)
 		expectedSeq++
 
-		if totalBytesWrite >= nextLogPoint {
+		if totalBytesWrite >= int64(batchSize) {
 			log.Printf("[sensor-%d] total bytes written: %d\n", sensorId, totalBytesWrite)
-			nextLogPoint += logBytesThreshold
+
+			_ = stream.Send(&apipb.AudioBuf{
+				SensorId:  int32(sensorId),
+				SeqOffset: expectedSeq,
+				Pcm:       buffer,
+			})
+			buffer = buffer[:0]
+			totalBytesWrite = 0
 		}
 	}
 }

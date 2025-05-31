@@ -1,5 +1,10 @@
-mqtt/
+infra/config
+infra/data
+infra/log
+
 bin/
 sensor/config
 gen/
 __pycache__
+
+gateway/recordings
